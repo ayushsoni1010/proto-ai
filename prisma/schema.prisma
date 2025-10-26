@@ -2,13 +2,13 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client"
-  output   = "../lib/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Image {
@@ -34,7 +34,7 @@ model Image {
   @@index([status])
   @@index([createdAt])
   @@index([hash])
-}
+}w
 
 model UploadSession {
   id          String   @id @default(cuid())

@@ -1,10 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { uploadToS3, getSignedDownloadUrl } from '@/lib/s3';
-import { validateImage, checkForDuplicates, convertHeicToJpeg } from '@/lib/image-validation';
-import { z } from 'zod';
-import sharp from 'sharp';
-import crypto from 'crypto';
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { uploadToS3, getSignedDownloadUrl } from "@/lib/s3";
+import {
+  validateImage,
+  checkForDuplicates,
+  convertHeicToJpeg,
+} from "@/lib/image-validation";
+import { z } from "zod";
+import sharp from "sharp";
+import crypto from "crypto";
 
 const chunkUploadSchema = z.object({
   sessionId: z.string().optional(),
@@ -24,18 +28,30 @@ export async function POST(request: NextRequest) {
     const validation = chunkUploadSchema.safeParse(body);
 
     if (!validation.success) {
-      return NextResponse.json({
-        error: 'Invalid input',
-        details: validation.error.errors,
-      }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "Invalid input",
+          details: validation.error.issues,
+        },
+        { status: 400 }
+      );
     }
 
-    const { sessionId, filename, mimeType, totalChunks, chunkIndex, chunkData } = validation.data;
+    const {
+      sessionId,
+      filename,
+      mimeType,
+      totalChunks,
+      chunkIndex,
+      chunkData,
+    } = validation.data;
 
     // Create or get session
-    let session = sessionId ? await prisma.uploadSession.findUnique({
-      where: { id: sessionId },
-    }) : null;
+    let session = sessionId
+      ? await prisma.uploadSession.findUnique({
+          where: { id: sessionId },
+        })
+      : null;
 
     if (!session) {
       session = await prisma.uploadSession.create({
@@ -48,12 +64,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Decode and store chunk
-    const chunkBuffer = Buffer.from(chunkData, 'base64');
-    
+    const chunkBuffer = Buffer.from(chunkData, "base64");
+
     if (!chunkStorage.has(session.id)) {
       chunkStorage.set(session.id, new Array(totalChunks));
     }
-    
+
     const chunks = chunkStorage.get(session.id)!;
     chunks[chunkIndex] = chunkBuffer;
 
@@ -66,52 +82,65 @@ export async function POST(request: NextRequest) {
     });
 
     // Check if all chunks are uploaded
-    const allChunksReceived = chunks.every(chunk => chunk !== undefined);
-    
+    const allChunksReceived = chunks.every((chunk) => chunk !== undefined);
+
     if (allChunksReceived) {
       try {
         // Combine all chunks
         const completeBuffer = Buffer.concat(chunks);
-        
+
         // Convert HEIC to JPEG if needed
-        let processedBuffer = completeBuffer;
+        let processedBuffer: Buffer = completeBuffer;
         let finalMimeType = mimeType;
-        
-        if (mimeType === 'image/heic' || filename.toLowerCase().endsWith('.heic')) {
-          processedBuffer = await convertHeicToJpeg(completeBuffer);
-          finalMimeType = 'image/jpeg';
+
+        if (
+          mimeType === "image/heic" ||
+          filename.toLowerCase().endsWith(".heic")
+        ) {
+          processedBuffer = Buffer.from(
+            await convertHeicToJpeg(completeBuffer)
+          );
+          finalMimeType = "image/jpeg";
         }
 
         // Validate image
         const validationResult = await validateImage(processedBuffer);
-        
+
         if (!validationResult.isValid) {
           // Clean up session and chunks
           await prisma.uploadSession.update({
             where: { id: session.id },
-            data: { status: 'FAILED' },
+            data: { status: "FAILED" },
           });
           chunkStorage.delete(session.id);
-          
-          return NextResponse.json({
-            error: 'Image validation failed',
-            details: validationResult.errors,
-          }, { status: 400 });
+
+          return NextResponse.json(
+            {
+              error: "Image validation failed",
+              details: validationResult.errors,
+            },
+            { status: 400 }
+          );
         }
 
         // Check for duplicates
         if (validationResult.metadata?.hash) {
-          const isDuplicate = await checkForDuplicates(validationResult.metadata.hash);
+          const isDuplicate = await checkForDuplicates(
+            validationResult.metadata.hash
+          );
           if (isDuplicate) {
             await prisma.uploadSession.update({
               where: { id: session.id },
-              data: { status: 'FAILED' },
+              data: { status: "FAILED" },
             });
             chunkStorage.delete(session.id);
-            
-            return NextResponse.json({
-              error: 'Duplicate image detected',
-            }, { status: 400 });
+
+            return NextResponse.json(
+              {
+                error: "Duplicate image detected",
+              },
+              { status: 400 }
+            );
           }
         }
 
@@ -135,7 +164,7 @@ export async function POST(request: NextRequest) {
             width: imageInfo.width || 0,
             height: imageInfo.height || 0,
             s3Key,
-            status: 'VALIDATED',
+            status: "VALIDATED",
             hash: validationResult.metadata?.hash,
             blurScore: validationResult.metadata?.blurScore,
             faceCount: validationResult.metadata?.faceCount,
@@ -151,7 +180,7 @@ export async function POST(request: NextRequest) {
         await prisma.uploadSession.update({
           where: { id: session.id },
           data: {
-            status: 'COMPLETED',
+            status: "COMPLETED",
             s3Key,
           },
         });
@@ -177,15 +206,14 @@ export async function POST(request: NextRequest) {
             createdAt: image.createdAt,
           },
         });
-
       } catch (error) {
         // Mark session as failed
         await prisma.uploadSession.update({
           where: { id: session.id },
-          data: { status: 'FAILED' },
+          data: { status: "FAILED" },
         });
         chunkStorage.delete(session.id);
-        
+
         throw error;
       }
     }
@@ -200,12 +228,14 @@ export async function POST(request: NextRequest) {
         percentage: Math.round(((chunkIndex + 1) / totalChunks) * 100),
       },
     });
-
   } catch (error) {
-    console.error('Chunked upload error:', error);
-    return NextResponse.json({
-      error: 'Chunked upload failed',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    }, { status: 500 });
+    console.error("Chunked upload error:", error);
+    return NextResponse.json(
+      {
+        error: "Chunked upload failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }

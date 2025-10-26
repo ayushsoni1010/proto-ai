@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import ImageUpload from '@/components/image-upload';
-import ImageGallery from '@/components/image-gallery';
+import { useState } from "react";
+import ImageUpload from "@/components/image-upload";
+import ImageGallery from "@/components/image-gallery";
 
 export default function Home() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);

@@ -1,6 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { getSignedDownloadUrl } from '@/lib/s3';
+
+// Mock images data - in a real app, this would come from the database
+const mockImages = [
+  {
+    id: 'img_1',
+    filename: 'sample-1.jpg',
+    originalName: 'sample-image-1.jpg',
+    mimeType: 'image/jpeg',
+    size: 2048576, // 2MB
+    width: 1920,
+    height: 1080,
+    status: 'VALIDATED',
+    blurScore: 150.5,
+    faceCount: 1,
+    faceSize: 0.15,
+    downloadUrl: '/api/placeholder?w=1920&h=1080',
+    createdAt: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+    updatedAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: 'img_2',
+    filename: 'sample-2.png',
+    originalName: 'sample-image-2.png',
+    mimeType: 'image/png',
+    size: 1536000, // 1.5MB
+    width: 1280,
+    height: 720,
+    status: 'VALIDATED',
+    blurScore: 200.3,
+    faceCount: 1,
+    faceSize: 0.12,
+    downloadUrl: '/api/placeholder?w=1280&h=720',
+    createdAt: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
+    updatedAt: new Date(Date.now() - 172800000).toISOString(),
+  },
+];
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,53 +42,25 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
     const status = searchParams.get('status');
-    const skip = (page - 1) * limit;
 
-    const where = status ? { status: status as any } : {};
+    // Mock filtering
+    let filteredImages = mockImages;
+    if (status) {
+      filteredImages = mockImages.filter(img => img.status === status);
+    }
 
-    const [images, total] = await Promise.all([
-      prisma.image.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          filename: true,
-          originalName: true,
-          mimeType: true,
-          size: true,
-          width: true,
-          height: true,
-          status: true,
-          blurScore: true,
-          faceCount: true,
-          faceSize: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      prisma.image.count({ where }),
-    ]);
-
-    // Generate signed URLs for each image
-    const imagesWithUrls = await Promise.all(
-      images.map(async (image) => {
-        const downloadUrl = await getSignedDownloadUrl(`images/${image.filename}`);
-        return {
-          ...image,
-          downloadUrl,
-        };
-      })
-    );
+    // Mock pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedImages = filteredImages.slice(startIndex, endIndex);
 
     return NextResponse.json({
-      images: imagesWithUrls,
+      images: paginatedImages,
       pagination: {
         page,
         limit,
-        total,
-        pages: Math.ceil(total / limit),
+        total: filteredImages.length,
+        pages: Math.ceil(filteredImages.length / limit),
       },
     });
 
@@ -76,22 +82,13 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Image ID required' }, { status: 400 });
     }
 
-    const image = await prisma.image.findUnique({
-      where: { id },
-    });
-
-    if (!image) {
+    // Mock deletion - in a real app, this would delete from database and S3
+    const imageIndex = mockImages.findIndex(img => img.id === id);
+    if (imageIndex === -1) {
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
 
-    // Delete from S3
-    const { deleteFromS3 } = await import('@/lib/s3');
-    await deleteFromS3(image.s3Key);
-
-    // Delete from database
-    await prisma.image.delete({
-      where: { id },
-    });
+    mockImages.splice(imageIndex, 1);
 
     return NextResponse.json({ success: true });
 

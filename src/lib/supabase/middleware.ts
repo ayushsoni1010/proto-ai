@@ -32,15 +32,16 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Redirect unauthenticated users to login (except for auth routes)
-  const isAuthRoute = request.nextUrl.pathname.startsWith("/login") || 
-                      request.nextUrl.pathname.startsWith("/signup") ||
-                      request.nextUrl.pathname.startsWith("/forgot-password");
+  // Temporarily disabled for demo purposes
+  // const isAuthRoute = request.nextUrl.pathname.startsWith("/login") || 
+  //                     request.nextUrl.pathname.startsWith("/signup") ||
+  //                     request.nextUrl.pathname.startsWith("/forgot-password");
   
-  if (!user && !isAuthRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
-  }
+  // if (!user && !isAuthRoute) {
+  //   const url = request.nextUrl.clone();
+  //   url.pathname = "/login";
+  //   return NextResponse.redirect(url);
+  // }
 
   // Add user ID to headers for API routes
   if (request.nextUrl.pathname.startsWith("/api") && user) {
